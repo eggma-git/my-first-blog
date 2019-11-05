@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="ROBOTS" content="ALL" />
+    <meta name="MSSmartTagsPreventParsing" content="true" />
+    <meta name="Copyright" content="Django Software Foundation" />
+    <meta name="keywords" content="Python, Django, framework, open-source" />
+    <meta name="description" content="" />
+
+    
+    <!-- Favicons -->
+    <link rel="apple-touch-icon" href="https://static.djangoproject.com/img/icon-touch.e4872c4da341.png">
+    <link rel="icon" sizes="192x192" href="https://static.djangoproject.com/img/icon-touch.e4872c4da341.png">
+    <link rel="shortcut icon" href="https://static.djangoproject.com/img/favicon.6dbf28c0650e.ico">
+    <meta name="msapplication-TileColor" content="#113228">
+    <meta name="msapplication-TileImage" content="https://static.djangoproject.com/img/icon-tile.b01ac0ef9f67.png">
+
+    <title>The Web framework for perfectionists with deadlines | Django</title>
+
+    <link rel="stylesheet" href="https://static.djangoproject.com/css/output.cb384bae3377.css" >
+    <script src="https://static.djangoproject.com/js/lib/webfontloader/webfontloader.e75218f5f090.js"></script>
+    <script>
+    WebFont.load({
+      custom: {
+        families: ['FontAwesome', 'Fira+Mono'],
+      },
+      google: {
+        families: ['Roboto:400italic,700italic,300,700,400:latin'
+        ]
+      },
+      classes: false,
+      events: false,
+      timeout: 1000
+    });
+    </script>
+    <script src="https://static.djangoproject.com/js/lib/modernizr.3b36762e418a.js"></script>
+    
+  </head>
+
+  <body id="homepage" class="homepage">
+
+    <div role="banner" id="top">
+  <div class="container">
+    <a class="logo" href="https://www.djangoproject.com/">Django</a>
+    <p class="meta">The web framework for perfectionists with deadlines.</p>
+    <div role="navigation">
+      <ul>
+        <li>
+          <a href="https://www.djangoproject.com/start/overview/">Overview</a>
+        </li>
+        <li>
+          <a href="https://www.djangoproject.com/download/">Download</a>
+        </li>
+        <li>
+          <a href="https://docs.djangoproject.com/">Documentation</a>
+        </li>
+        <li>
+          <a href="https://www.djangoproject.com/weblog/">News</a>
+        </li>
+        <li>
+          <a href="https://www.djangoproject.com/community/">Community</a>
+        </li>
+        <li>
+          <a href="https://github.com/django/django" target="_blank" rel="noopener">Code</a>
+        </li>
+        <li>
+          <a href="https://code.djangoproject.com/">Issues</a>
+        </li>
+        <li>
+          <a href="https://www.djangoproject.com/foundation/">About</a>
+        </li>
+        <li>
+          <a href="https://www.djangoproject.com/fundraising/">&#9829; Donate</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+
+    <div class="copy-banner">
+      <div class="container ">
+        
+    <h1 class="visuallyhidden">Django</h1>
+    <p>
+        <em>Django makes it easier to build better Web apps more quickly and with less code.</em>
+    </p>
+    <p>
+        <a href="https://www.djangoproject.com/start/" class="cta">Get started with Django</a>
+    </p>
+    
+
+      </div>
+    </div>
+    <div id="billboard"></div>
+
+    <div class="container sidebar-right">
+      <div role="main">
+
+        
+          
+        
+
+        
+    <div class="section">
+        <h1>Meet Django</h1>
+        <p>
+          Django is a high-level Python Web framework that encourages rapid development and clean, pragmatic design.
+          Built by experienced developers, it takes care of much of the hassle of Web development, so you can focus
+          on writing your app without needing to reinvent the wheel. Itâ€™s free and open source.
+        </p>
+        <dl class="list-features">
+          <dt><i class="icon icon-bolt"></i> Ridiculously fast.</dt>
+          <dd>
+            <p>Django was designed to help developers take applications from concept to completion as quickly as possible.</p>
+          </dd>
+
+          <dt><i class="icon icon-lock"></i> Reassuringly secure.</dt>
+          <dd>
+            <p>Django takes security seriously and helps developers avoid many common security mistakes.</p>
+          </dd>
+
+          <dt><i class="icon icon-dashboard"></i> Exceedingly scalable.</dt>
+          <dd>
+            <p>Some of the busiest sites on the Web leverage Djangoâ€™s ability to quickly and flexibly scale.</p>
+          </dd>
+        </dl>
+
+        <a href="https://www.djangoproject.com/start/overview/" class="cta outline">Learn more about Django</a>
+    </div>
+
+    
+
+    <div class="section">
+    <h1>Stay in the loop</h1>
+    <p>Subscribe to one of our mailing lists to stay up to date with everything in the Django community:</p>
+    <div class="layout-2col">
+  <div class="col form-email">
+    <h3><a href="https://groups.google.com/group/django-users">Using Django</a></h3>
+    <p class="meta">Get help with Django and follow announcements.</p>
+    <form class="form-input" action="https://groups.google.com/group/django-users/boxsubscribe">
+      <input type="email" name="email" placeholder="Enter email">
+      <button type="submit">
+        <i class="icon icon-envelope-o"></i>
+        <span class="visuallyhidden">Subscribe</span>
+      </button>
+    </form>
+    <p class="meta">
+      You can also subscribe by sending an email to
+      <a href="mailto:django-users+subscribe@googlegroups.com">
+      django-users+subscribe@googlegroups.com</a> and following the
+      instructions that will be sent to you.
+    </p>
+  </div>
+  <div class="col form-email last-child">
+    <h3><a href="https://groups.google.com/group/django-developers">Contributing to Django</a></h3>
+    <p class="meta">Contribute to the development of Django itself.</p>
+    <form class="form-input" action="https://groups.google.com/group/django-developers/boxsubscribe">
+      <input type="email" name="email" placeholder="Enter email">
+      <button type="submit">
+        <i class="icon icon-envelope-o"></i>
+        <span class="visuallyhidden">Subscribe</span>
+      </button>
+    </form>
+    <p class="meta">
+      Before asking a question about how to contribute, read
+      <a href="https://docs.djangoproject.com/en/dev/internals/contributing/">
+      Contributing to Django</a>. Many frequently asked questions are answered there.
+    </p>
+    <hr>
+    <p class="meta">
+      You can also subscribe by sending an email to
+      <a href="mailto:django-developers+subscribe@googlegroups.com">
+      django-developers+subscribe@googlegroups.com</a> and following the
+      instructions that will be sent to you.
+    </p>
+  </div>
+
+</div>
+<p>
+    We have a few other specialized lists (mentorship, i18n, ...). You can
+    find more information about them in our
+    <a href="https://docs.djangoproject.com/en/dev/internals/mailing-lists/">
+    mailing list documentation</a>.
+  </p>
+
+    </div>
+
+    <!-- END #content-secondary -->
+
+        <a href="#top" class="backtotop"><i class="icon icon-chevron-up"></i> Back to Top</a>
+      </div>
+
+      
+  <div role="complementary">
+      <a href="https://www.djangoproject.com/download/" class="cta">
+          Download <em>latest release: 2.2.6</em>
+      </a>
+      <a href="https://docs.djangoproject.com/" class="link-readmore">Django documentation</a>
+
+      
+
+
+  <div class="fundraising-sidebar">
+    <h2>Support Django!</h2>
+
+    <div class="small-heart">
+      <img src="https://static.djangoproject.com/img/fundraising-heart.cd6bb84ffd33.svg" alt="Support Django!" />
+    </div>
+
+    <div class="small-cta">
+      <ul class="list-links-small">
+        <li><a href="https://www.djangoproject.com/fundraising/">
+          Tiingo Inc. donated to the Django Software Foundation to
+          support Django development. Donate today!
+        </a></li>
+      </ul>
+    </div>
+  </div>
+
+
+
+      <h3>Latest news</h3>
+      <ul class="list-news">
+
+    <li>
+  <h4>
+    <a href="https://www.djangoproject.com/weblog/2019/oct/24/2020-dsf-board-nominations/">2020 DSF Board Nominations</a>
+  </h4>
+  
+    <p>It is that time of year again to think about next yearâ€™s Django Software Foundationâ€™s Board of Directors! There has been some confusion on this in the past, but anyone including current Board members, DSF Members, or the public at large can apply to the Board. It is open to all. Please consider joining us for 2020!</p>
+
+  
+  <span class="meta">
+    Posted by <strong>Frank Wiles</strong> on October 24, 2019
+  </span>
+  
+  
+</li>
+
+
+    <li>
+  <h4>
+    <a href="https://www.djangoproject.com/weblog/2019/oct/22/nominations-2019-malcolm-tredinnick-memorial-prize/">Nominations for 2019 Malcolm Tredinnick Memorial Prize</a>
+  </h4>
+  
+    <p>Once again, nominations are open for this year's Malcolm Tredinnick Memorial Prize.</p>
+
+  
+  <span class="meta">
+    Posted by <strong>Frank Wiles</strong> on October 22, 2019
+  </span>
+  
+  
+</li>
+
+
+</ul>
+
+      <a href="https://www.djangoproject.com/weblog/" class="link-readmore">More news</a>
+
+      <h3>New to Django?</h3>
+      <ul class="list-links-small docs-list">
+          <li><a href="https://docs.djangoproject.com/en/stable/intro/install/">Installation guide</a></li>
+          <li><a href="https://docs.djangoproject.com/en/stable/intro/tutorial01/">Write your first Django app</a></li>
+      </ul>
+      <a href="https://www.djangoproject.com/start/" class="link-readmore">Getting started with Django</a>
+
+      <h3>The power of Django</h3>
+      <ul class="list-links-small docs-list">
+          <li><a href="https://docs.djangoproject.com/en/stable/topics/db/models/">Object-relational mapper</a></li>
+          <li><a href="https://docs.djangoproject.com/en/stable/intro/tutorial02/">Automatic admin interface</a></li>
+          <li><a href="https://docs.djangoproject.com/en/stable/topics/templates/">Robust template system</a></li>
+          <li><a href="https://docs.djangoproject.com/en/stable/topics/i18n/">Quick internationalization</a></li>
+      </ul>
+      <a href="https://www.djangoproject.com/start/overview/" class="link-readmore">Explore more features</a>
+
+      <h3>Get involved</h3>
+      <dl class="list-links-small">
+         <dt><a href="irc://irc.freenode.net/django">#django IRC channel</a></dt>
+          <dd>
+            Chat with other Django users
+          </dd>
+
+          <dt><a href="https://code.djangoproject.com/">Ticket system</a></dt>
+          <dd>
+            Report bugs and make feature requests
+          </dd>
+      </dl>
+      <a href="https://www.djangoproject.com/community/" class="link-readmore">Inside the Django community</a>
+
+      <h3>The Django Software Foundation</h3>
+      <dl class="list-links-small">
+        <dt><a href="/foundation/">About the Foundation</a></dt>
+        <dd>
+          Our non-profit supports the project
+        </dd>
+
+        <dt><a href="/foundation/donate/">Support Django</a></dt>
+        <dd>
+          Your contribution makes Django stronger
+        </dd>
+
+        <dt><a href="/contact/foundation/">Contact the Django Software Foundation</a></dt>
+        <dd></dd>
+      </dl>
+      <a href="/foundation/" class="link-readmore">More about the DSF</a>
+      
+  </div>
+
+
+      
+
+    </div>
+
+     
+     
+
+    
+    
+  
+
+
+    
+      
+<div role="contentinfo">
+  <div class="subfooter">
+    <div class="container">
+      <h1 class="visuallyhidden">Django Links</h1>
+
+      <div class="col learn">
+        <h2>Learn More</h2>
+        <ul>
+          <li><a href="https://www.djangoproject.com/start/overview/">About Django</a></li>
+          
+          <li><a href="https://www.djangoproject.com/start/">Getting Started with Django</a></li>
+          <li><a href="https://docs.djangoproject.com/en/dev/internals/organization/">Team Organization</a></li>
+          <li><a href="https://www.djangoproject.com/foundation/">Django Software Foundation</a></li>
+          <li><a href="https://www.djangoproject.com/conduct/">Code of Conduct</a></li>
+          <li><a href="https://www.djangoproject.com/diversity/">Diversity Statement</a></li>
+        </ul>
+      </div>
+
+      <div class="col involved">
+        <h2>Get Involved</h2>
+        <ul>
+          <li><a href="https://www.djangoproject.com/community/">Join a Group</a></li>
+          <li><a href="https://docs.djangoproject.com/en/dev/internals/contributing/">Contribute to Django</a></li>
+          <li><a href="https://docs.djangoproject.com/en/dev/internals/contributing/bugs-and-features/">Submit a Bug</a></li>
+          <li><a href="https://docs.djangoproject.com/en/dev/internals/security/#reporting-security-issues">Report a Security Issue</a></li>
+        </ul>
+      </div>
+
+      <div class="col follow last-child">
+        <h2>Follow Us</h2>
+        <ul>
+          <li><a href="https://github.com/django">GitHub</a></li>
+          <li><a href="https://twitter.com/djangoproject">Twitter</a></li>
+          <li><a href="https://www.djangoproject.com/rss/weblog/">News RSS</a></li>
+          <li><a href="https://groups.google.com/forum/#!forum/django-users">Django Users Mailing List</a></li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="container">
+      <div class="footer-logo">
+        <a class="logo" href="https://www.djangoproject.com/">Django</a>
+      </div>
+      <ul class="thanks">
+        <li>
+          <span>Hosting by</span> <a class="rackspace" href="https://www.rackspace.com">Rackspace</a>
+        </li>
+        <li class="design"><span>Design by</span> <a class="threespot" href="https://www.threespot.com">Threespot</a> <span class="ampersand">&amp;</span> <a class="andrevv" href="http://andrevv.com/"></a></li>
+      </ul>
+      <p class="copyright">&copy; 2005-2019
+        <a href="https://www.djangoproject.com/foundation/"> Django Software
+        Foundation</a> and individual contributors. Django is a
+        <a href="https://www.djangoproject.com/trademarks/">registered
+        trademark</a> of the Django Software Foundation.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+    
+
+    
+    <script>
+    function extless(input) {
+        return input.replace(/(.*)\.[^.]+$/, '$1');
+    }
+    var require = {
+        shim: {
+            'jquery': [],
+            'jquery.inview': ["jquery"],
+            'jquery.payment': ["jquery"],
+            'jquery.flot': ["jquery"],
+            'jquery.unveil': ["jquery"],
+            'stripe': {
+              exports: 'Stripe'
+            }
+        },
+        paths: {
+            "jquery": extless("https://static.djangoproject.com/js/lib/jquery/dist/jquery.min.87e69028f78d.js"),
+            "jquery.inview": extless("https://static.djangoproject.com/js/lib/jquery.inview/jquery.inview.min.4edba1c65592.js"),
+            "jquery.payment": extless("https://static.djangoproject.com/js/lib/jquery.payment/lib/jquery.payment.e99c05ca79ae.js"),
+            "jquery.unveil": extless("https://static.djangoproject.com/js/lib/unveil/jquery.unveil.min.ac79eb277093.js"),
+            "jquery.flot": extless("https://static.djangoproject.com/js/lib/jquery-flot/jquery.flot.min.9964206e9d7f.js"),
+            "clipboard": extless("https://static.djangoproject.com/js/lib/clipboard/dist/clipboard.min.bd70fd596a23.js"),
+            "mod/floating-warning": extless("https://static.djangoproject.com/js/mod/floating-warning.a21b2abd2884.js"),
+            "mod/list-collapsing": extless("https://static.djangoproject.com/js/mod/list-collapsing.c1a08d3ef9e9.js"),
+            "mod/list-feature": extless("https://static.djangoproject.com/js/mod/list-feature.73529480f25b.js"),
+            "mod/mobile-menu": extless("https://static.djangoproject.com/js/mod/mobile-menu.841726ee903a.js"),
+            "mod/version-switcher": extless("https://static.djangoproject.com/js/mod/version-switcher.c28bb83972bb.js"),
+            "mod/search-key": extless("https://static.djangoproject.com/js/mod/search-key.f3c0a6fcfedd.js"),
+            "mod/stripe-custom-checkout": extless("https://static.djangoproject.com/js/mod/stripe-custom-checkout.40ebeda6d3fe.js"),
+            "mod/stripe-change-card": extless("https://static.djangoproject.com/js/mod/stripe-change-card.682c710317a8.js"),
+            "mod/console-tabs": extless("https://static.djangoproject.com/js/mod/console-tabs.70ce882faaf3.js"),
+            "stripe-checkout": "https://checkout.stripe.com/checkout",
+            "stripe": "https://js.stripe.com/v2/?"  // ? needed due to require.js
+        }
+    };
+    </script>
+    <script data-main="https://static.djangoproject.com/js/main.07884ebc4865.js" src="https://static.djangoproject.com/js/lib/require.177879fbe7dd.js"></script>
+    
+
+  </body>
+</html>
+Ç]sãXz      ]»x]»{@ø&Ü]» ¤       :https://www.djangoproject.com/ necko:classified 1 strongly-framed 1 security-info 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 request-method GET request-Accept-Language en-US,en;q=0.5 response-head HTTP/1.1 200 OK
+Server: nginx
+Date: Thu, 31 Oct 2019 17:52:56 GMT
+Content-Type: text/html; charset=utf-8
+Content-Length: 16733
+Vary: Accept-Language
+Content-Language: en
+X-Frame-Options: SAMEORIGIN
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+Expires: Thu, 31 Oct 2019 17:55:27 GMT
+Cache-Control: max-age=300
+Access-Control-Allow-Origin: https://code.djangoproject.com
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+ original-response-headers Server: nginx
+Date: Thu, 31 Oct 2019 17:52:56 GMT
+Content-Type: text/html; charset=utf-8
+Content-Length: 16733
+Connection: keep-alive
+Vary: Accept-Language
+Content-Language: en
+X-Frame-Options: SAMEORIGIN
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+Expires: Thu, 31 Oct 2019 17:55:27 GMT
+Cache-Control: max-age=300
+Access-Control-Allow-Origin: https://code.djangoproject.com
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+ ctid 1 uncompressed-len 0 net-response-time-onstart 399 net-response-time-onstop 401 predictor::resource-count 19 predictor::https://static.djangoproject.com/css/output.cb384bae3377.css 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/lib/webfontloader/webfontloader.e75218f5f090.js 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/lib/modernizr.3b36762e418a.js 1,1,1572544376,4096 predictor::https://static.djangoproject.com/img/fundraising-heart.cd6bb84ffd33.svg 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/lib/require.177879fbe7dd.js 1,1,1572544376,4096 predictor::https://fonts.googleapis.com/css?family=Roboto:400italic,700italic,300,700,400&subset=latin 1,1,1572544376,4096 predictor::https://static.djangoproject.com/img/logo-django.42234b631760.svg 1,1,1572544376,4096 predictor::https://static.djangoproject.com/img/logo-rackspace.f445a11160d6.svg 1,1,1572544376,4096 predictor::https://static.djangoproject.com/img/logo-threespot.6f9857ef0bb4.svg 1,1,1572544376,4096 predictor::https://static.djangoproject.com/img/logo-andrevv.6c6c6eb2ace8.svg 1,1,1572544376,4096 predictor::https://netdna.bootstrapcdn.com/font-awesome/4.2.0/fonts/fontawesome-webfont.woff?v=4.2.0 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/main.07884ebc4865.js 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/mod/mobile-menu.841726ee903a.js 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/mod/list-feature.73529480f25b.js 1,1,1572544376,4096 predictor::https://fonts.gstatic.com/s/roboto/v20/KFOlCnqEu92Fr1MmWUlfBBc4.woff2 1,1,1572544376,4096 predictor::https://fonts.gstatic.com/s/roboto/v20/KFOlCnqEu92Fr1MmSU5fBBc4.woff2 1,1,1572544376,4096 predictor::https://fonts.gstatic.com/s/roboto/v20/KFOmCnqEu92Fr1Mu4mxK.woff2 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/lib/jquery/dist/jquery.min.87e69028f78d.js 1,1,1572544376,4096 predictor::https://static.djangoproject.com/js/lib/jquery.inview/jquery.inview.min.4edba1c65592.js 1,1,1572544376,4096   A]

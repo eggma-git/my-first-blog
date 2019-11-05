@@ -1,0 +1,966 @@
+/*global Calendar, findPosX, findPosY, getStyle, get_format, gettext, gettext_noop, interpolate, ngettext, quickElement*/
+// Inserts shortcut buttons after all of the following:
+//     <input type="text" class="vDateField">
+//     <input type="text" class="vTimeField">
+(function() {
+    'use strict';
+    var DateTimeShortcuts = {
+        calendars: [],
+        calendarInputs: [],
+        clockInputs: [],
+        clockHours: {
+            default_: [
+                [gettext_noop('Now'), -1],
+                [gettext_noop('Midnight'), 0],
+                [gettext_noop('6 a.m.'), 6],
+                [gettext_noop('Noon'), 12],
+                [gettext_noop('6 p.m.'), 18]
+            ]
+        },
+        dismissClockFunc: [],
+        dismissCalendarFunc: [],
+        calendarDivName1: 'calendarbox', // name of calendar <div> that gets toggled
+        calendarDivName2: 'calendarin',  // name of <div> that contains calendar
+        calendarLinkName: 'calendarlink',// name of the link that is used to toggle
+        clockDivName: 'clockbox',        // name of clock <div> that gets toggled
+        clockLinkName: 'clocklink',      // name of the link that is used to toggle
+        shortCutsClass: 'datetimeshortcuts', // class of the clock and cal shortcuts
+        timezoneWarningClass: 'timezonewarning', // class of the warning for timezone mismatch
+        timezoneOffset: 0,
+        init: function() {
+            var body = document.getElementsByTagName('body')[0];
+            var serverOffset = body.getAttribute('data-admin-utc-offset');
+            if (serverOffset) {
+                var localOffset = new Date().getTimezoneOffset() * -60;
+                DateTimeShortcuts.timezoneOffset = localOffset - serverOffset;
+            }
+
+            var inputs = document.getElementsByTagName('input');
+            for (var i = 0; i < inputs.length; i++) {
+                var inp = inputs[i];
+                if (inp.getAttribute('type') === 'text' && inp.className.match(/vTimeField/)) {
+                    DateTimeShortcuts.addClock(inp);
+                    DateTimeShortcuts.addTimezoneWarning(inp);
+                }
+                else if (inp.getAttribute('type') === 'text' && inp.className.match(/vDateField/)) {
+                    DateTimeShortcuts.addCalendar(inp);
+                    DateTimeShortcuts.addTimezoneWarning(inp);
+                }
+            }
+        },
+        // Return the current time while accounting for the server timezone.
+        now: function() {
+            var body = document.getElementsByTagName('body')[0];
+            var serverOffset = body.getAttribute('data-admin-utc-offset');
+            if (serverOffset) {
+                var localNow = new Date();
+                var localOffset = localNow.getTimezoneOffset() * -60;
+                localNow.setTime(localNow.getTime() + 1000 * (serverOffset - localOffset));
+                return localNow;
+            } else {
+                return new Date();
+            }
+        },
+        // Add a warning when the time zone in the browser and backend do not match.
+        addTimezoneWarning: function(inp) {
+            var $ = django.jQuery;
+            var warningClass = DateTimeShortcuts.timezoneWarningClass;
+            var timezoneOffset = DateTimeShortcuts.timezoneOffset / 3600;
+
+            // Only warn if there is a time zone mismatch.
+            if (!timezoneOffset) {
+                return;
+            }
+
+            // Check if warning is already there.
+            if ($(inp).siblings('.' + warningClass).length) {
+                return;
+            }
+
+            var message;
+            if (timezoneOffset > 0) {
+                message = ngettext(
+                    'Note: You are %s hour ahead of server time.',
+                    'Note: You are %s hours ahead of server time.',
+                    timezoneOffset
+                );
+            }
+            else {
+                timezoneOffset *= -1;
+                message = ngettext(
+                    'Note: You are %s hour behind server time.',
+                    'Note: You are %s hours behind server time.',
+                    timezoneOffset
+                );
+            }
+            message = interpolate(message, [timezoneOffset]);
+
+            var $warning = $('<span>');
+            $warning.attr('class', warningClass);
+            $warning.text(message);
+
+            $(inp).parent()
+                .append($('<br>'))
+                .append($warning);
+        },
+        // Add clock widget to a given field
+        addClock: function(inp) {
+            var num = DateTimeShortcuts.clockInputs.length;
+            DateTimeShortcuts.clockInputs[num] = inp;
+            DateTimeShortcuts.dismissClockFunc[num] = function() { DateTimeShortcuts.dismissClock(num); return true; };
+
+            // Shortcut links (clock icon and "Now" link)
+            var shortcuts_span = document.createElement('span');
+            shortcuts_span.className = DateTimeShortcuts.shortCutsClass;
+            inp.parentNode.insertBefore(shortcuts_span, inp.nextSibling);
+            var now_link = document.createElement('a');
+            now_link.setAttribute('href', "#");
+            now_link.appendChild(document.createTextNode(gettext('Now')));
+            now_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.handleClockQuicklink(num, -1);
+            });
+            var clock_link = document.createElement('a');
+            clock_link.setAttribute('href', '#');
+            clock_link.id = DateTimeShortcuts.clockLinkName + num;
+            clock_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                // avoid triggering the document click handler to dismiss the clock
+                e.stopPropagation();
+                DateTimeShortcuts.openClock(num);
+            });
+
+            quickElement(
+                'span', clock_link, '',
+                'class', 'clock-icon',
+                'title', gettext('Choose a Time')
+            );
+            shortcuts_span.appendChild(document.createTextNode('\u00A0'));
+            shortcuts_span.appendChild(now_link);
+            shortcuts_span.appendChild(document.createTextNode('\u00A0|\u00A0'));
+            shortcuts_span.appendChild(clock_link);
+
+            // Create clock link div
+            //
+            // Markup looks like:
+            // <div id="clockbox1" class="clockbox module">
+            //     <h2>Choose a time</h2>
+            //     <ul class="timelist">
+            //         <li><a href="#">Now</a></li>
+            //         <li><a href="#">Midnight</a></li>
+            //         <li><a href="#">6 a.m.</a></li>
+            //         <li><a href="#">Noon</a></li>
+            //         <li><a href="#">6 p.m.</a></li>
+            //     </ul>
+            //     <p class="calendar-cancel"><a href="#">Cancel</a></p>
+            // </div>
+
+            var clock_box = document.createElement('div');
+            clock_box.style.display = 'none';
+            clock_box.style.position = 'absolute';
+            clock_box.className = 'clockbox module';
+            clock_box.setAttribute('id', DateTimeShortcuts.clockDivName + num);
+            document.body.appendChild(clock_box);
+            clock_box.addEventListener('click', function(e) { e.stopPropagation(); });
+
+            quickElement('h2', clock_box, gettext('Choose a time'));
+            var time_list = quickElement('ul', clock_box);
+            time_list.className = 'timelist';
+            // The list of choices can be overridden in JavaScript like this:
+            // DateTimeShortcuts.clockHours.name = [['3 a.m.', 3]];
+            // where name is the name attribute of the <input>.
+            var name = typeof DateTimeShortcuts.clockHours[inp.name] === 'undefined' ? 'default_' : inp.name;
+            DateTimeShortcuts.clockHours[name].forEach(function(element) {
+                var time_link = quickElement('a', quickElement('li', time_list), gettext(element[0]), 'href', '#');
+                time_link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    DateTimeShortcuts.handleClockQuicklink(num, element[1]);
+                });
+            });
+
+            var cancel_p = quickElement('p', clock_box);
+            cancel_p.className = 'calendar-cancel';
+            var cancel_link = quickElement('a', cancel_p, gettext('Cancel'), 'href', '#');
+            cancel_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.dismissClock(num);
+            });
+
+            document.addEventListener('keyup', function(event) {
+                if (event.which === 27) {
+                    // ESC key closes popup
+                    DateTimeShortcuts.dismissClock(num);
+                    event.preventDefault();
+                }
+            });
+        },
+        openClock: function(num) {
+            var clock_box = document.getElementById(DateTimeShortcuts.clockDivName + num);
+            var clock_link = document.getElementById(DateTimeShortcuts.clockLinkName + num);
+
+            // Recalculate the clockbox position
+            // is it left-to-right or right-to-left layout ?
+            if (getStyle(document.body, 'direction') !== 'rtl') {
+                clock_box.style.left = findPosX(clock_link) + 17 + 'px';
+            }
+            else {
+                // since style's width is in em, it'd be tough to calculate
+                // px value of it. let's use an estimated px for now
+                // TODO: IE returns wrong value for findPosX when in rtl mode
+                //       (it returns as it was left aligned), needs to be fixed.
+                clock_box.style.left = findPosX(clock_link) - 110 + 'px';
+            }
+            clock_box.style.top = Math.max(0, findPosY(clock_link) - 30) + 'px';
+
+            // Show the clock box
+            clock_box.style.display = 'block';
+            document.addEventListener('click', DateTimeShortcuts.dismissClockFunc[num]);
+        },
+        dismissClock: function(num) {
+            document.getElementById(DateTimeShortcuts.clockDivName + num).style.display = 'none';
+            document.removeEventListener('click', DateTimeShortcuts.dismissClockFunc[num]);
+        },
+        handleClockQuicklink: function(num, val) {
+            var d;
+            if (val === -1) {
+                d = DateTimeShortcuts.now();
+            }
+            else {
+                d = new Date(1970, 1, 1, val, 0, 0, 0);
+            }
+            DateTimeShortcuts.clockInputs[num].value = d.strftime(get_format('TIME_INPUT_FORMATS')[0]);
+            DateTimeShortcuts.clockInputs[num].focus();
+            DateTimeShortcuts.dismissClock(num);
+        },
+        // Add calendar widget to a given field.
+        addCalendar: function(inp) {
+            var num = DateTimeShortcuts.calendars.length;
+
+            DateTimeShortcuts.calendarInputs[num] = inp;
+            DateTimeShortcuts.dismissCalendarFunc[num] = function() { DateTimeShortcuts.dismissCalendar(num); return true; };
+
+            // Shortcut links (calendar icon and "Today" link)
+            var shortcuts_span = document.createElement('span');
+            shortcuts_span.className = DateTimeShortcuts.shortCutsClass;
+            inp.parentNode.insertBefore(shortcuts_span, inp.nextSibling);
+            var today_link = document.createElement('a');
+            today_link.setAttribute('href', '#');
+            today_link.appendChild(document.createTextNode(gettext('Today')));
+            today_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.handleCalendarQuickLink(num, 0);
+            });
+            var cal_link = document.createElement('a');
+            cal_link.setAttribute('href', '#');
+            cal_link.id = DateTimeShortcuts.calendarLinkName + num;
+            cal_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                // avoid triggering the document click handler to dismiss the calendar
+                e.stopPropagation();
+                DateTimeShortcuts.openCalendar(num);
+            });
+            quickElement(
+                'span', cal_link, '',
+                'class', 'date-icon',
+                'title', gettext('Choose a Date')
+            );
+            shortcuts_span.appendChild(document.createTextNode('\u00A0'));
+            shortcuts_span.appendChild(today_link);
+            shortcuts_span.appendChild(document.createTextNode('\u00A0|\u00A0'));
+            shortcuts_span.appendChild(cal_link);
+
+            // Create calendarbox div.
+            //
+            // Markup looks like:
+            //
+            // <div id="calendarbox3" class="calendarbox module">
+            //     <h2>
+            //           <a href="#" class="link-previous">&lsaquo;</a>
+            //           <a href="#" class="link-next">&rsaquo;</a> February 2003
+            //     </h2>
+            //     <div class="calendar" id="calendarin3">
+            //         <!-- (cal) -->
+            //     </div>
+            //     <div class="calendar-shortcuts">
+            //          <a href="#">Yesterday</a> | <a href="#">Today</a> | <a href="#">Tomorrow</a>
+            //     </div>
+            //     <p class="calendar-cancel"><a href="#">Cancel</a></p>
+            // </div>
+            var cal_box = document.createElement('div');
+            cal_box.style.display = 'none';
+            cal_box.style.position = 'absolute';
+            cal_box.className = 'calendarbox module';
+            cal_box.setAttribute('id', DateTimeShortcuts.calendarDivName1 + num);
+            document.body.appendChild(cal_box);
+            cal_box.addEventListener('click', function(e) { e.stopPropagation(); });
+
+            // next-prev links
+            var cal_nav = quickElement('div', cal_box);
+            var cal_nav_prev = quickElement('a', cal_nav, '<', 'href', '#');
+            cal_nav_prev.className = 'calendarnav-previous';
+            cal_nav_prev.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.drawPrev(num);
+            });
+
+            var cal_nav_next = quickElement('a', cal_nav, '>', 'href', '#');
+            cal_nav_next.className = 'calendarnav-next';
+            cal_nav_next.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.drawNext(num);
+            });
+
+            // main box
+            var cal_main = quickElement('div', cal_box, '', 'id', DateTimeShortcuts.calendarDivName2 + num);
+            cal_main.className = 'calendar';
+            DateTimeShortcuts.calendars[num] = new Calendar(DateTimeShortcuts.calendarDivName2 + num, DateTimeShortcuts.handleCalendarCallback(num));
+            DateTimeShortcuts.calendars[num].drawCurrent();
+
+            // calendar shortcuts
+            var shortcuts = quickElement('div', cal_box);
+            shortcuts.className = 'calendar-shortcuts';
+            var day_link = quickElement('a', shortcuts, gettext('Yesterday'), 'href', '#');
+            day_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.handleCalendarQuickLink(num, -1);
+            });
+            shortcuts.appendChild(document.createTextNode('\u00A0|\u00A0'));
+            day_link = quickElement('a', shortcuts, gettext('Today'), 'href', '#');
+            day_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.handleCalendarQuickLink(num, 0);
+            });
+            shortcuts.appendChild(document.createTextNode('\u00A0|\u00A0'));
+            day_link = quickElement('a', shortcuts, gettext('Tomorrow'), 'href', '#');
+            day_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.handleCalendarQuickLink(num, +1);
+            });
+
+            // cancel bar
+            var cancel_p = quickElement('p', cal_box);
+            cancel_p.className = 'calendar-cancel';
+            var cancel_link = quickElement('a', cancel_p, gettext('Cancel'), 'href', '#');
+            cancel_link.addEventListener('click', function(e) {
+                e.preventDefault();
+                DateTimeShortcuts.dismissCalendar(num);
+            });
+            django.jQuery(document).bind('keyup', function(event) {
+                if (event.which === 27) {
+                    // ESC key closes popup
+                    DateTimeShortcuts.dismissCalendar(num);
+                    event.preventDefault();
+                }
+            });
+        },
+        openCalendar: function(num) {
+            var cal_box = document.getElementById(DateTimeShortcuts.calendarDivName1 + num);
+            var cal_link = document.getElementById(DateTimeShortcuts.calendarLinkName + num);
+            var inp = DateTimeShortcuts.calendarInputs[num];
+
+            // Determine if the current value in the input has a valid date.
+            // If so, draw the calendar with that date's year and month.
+            if (inp.value) {
+                var format = get_format('DATE_INPUT_FORMATS')[0];
+                var selected = inp.value.strptime(format);
+                var year = selected.getUTCFullYear();
+                var month = selected.getUTCMonth() + 1;
+                var re = /\d{4}/;
+                if (re.test(year.toString()) && month >= 1 && month <= 12) {
+                    DateTimeShortcuts.calendars[num].drawDate(month, year, selected);
+                }
+            }
+
+            // Recalculate the clockbox position
+            // is it left-to-right or right-to-left layout ?
+            if (getStyle(document.body, 'direction') !== 'rtl') {
+                cal_box.style.left = findPosX(cal_link) + 17 + 'px';
+            }
+            else {
+                // since style's width is in em, it'd be tough to calculate
+                // px value of it. let's use an estimated px for now
+                // TODO: IE returns wrong value for findPosX when in rtl mode
+                //       (it returns as it was left aligned), needs to be fixed.
+                cal_box.style.left = findPosX(cal_link) - 180 + 'px';
+            }
+            cal_box.style.top = Math.max(0, findPosY(cal_link) - 75) + 'px';
+
+            cal_box.style.display = 'block';
+            document.addEventListener('click', DateTimeShortcuts.dismissCalendarFunc[num]);
+        },
+        dismissCalendar: function(num) {
+            document.getElementById(DateTimeShortcuts.calendarDivName1 + num).style.display = 'none';
+            document.removeEventListener('click', DateTimeShortcuts.dismissCalendarFunc[num]);
+        },
+        drawPrev: function(num) {
+            DateTimeShortcuts.calendars[num].drawPreviousMonth();
+        },
+        drawNext: function(num) {
+            DateTimeShortcuts.calendars[num].drawNextMonth();
+        },
+        handleCalendarCallback: function(num) {
+            var format = get_format('DATE_INPUT_FORMATS')[0];
+            // the format needs to be escaped a little
+            format = format.replace('\\', '\\\\');
+            format = format.replace('\r', '\\r');
+            format = format.replace('\n', '\\n');
+            format = format.replace('\t', '\\t');
+            format = format.replace("'", "\\'");
+            return function(y, m, d) {
+                DateTimeShortcuts.calendarInputs[num].value = new Date(y, m - 1, d).strftime(format);
+                DateTimeShortcuts.calendarInputs[num].focus();
+                document.getElementById(DateTimeShortcuts.calendarDivName1 + num).style.display = 'none';
+            };
+        },
+        handleCalendarQuickLink: function(num, offset) {
+            var d = DateTimeShortcuts.now();
+            d.setDate(d.getDate() + offset);
+            DateTimeShortcuts.calendarInputs[num].value = d.strftime(get_format('DATE_INPUT_FORMATS')[0]);
+            DateTimeShortcuts.calendarInputs[num].focus();
+            DateTimeShortcuts.dismissCalendar(num);
+        }
+    };
+
+    window.addEventListener('load', DateTimeShortcuts.init);
+    window.DateTimeShortcuts = DateTimeShortcuts;
+})();
+        20190917224635                          ;O      ;O   ;O  / * g l o b a l   C a l e n d a r ,   f i n d P o s X ,   f i n d P o s Y ,   g e t S t y l e ,   g e t _ f o r m a t ,   g e t t e x t ,   g e t t e x t _ n o o p ,   i n t e r p o l a t e ,   n g e t t e x t ,   q u i c k E l e m e n t * / 
+ / /   I n s e r t s   s h o r t c u t   b u t t o n s   a f t e r   a l l   o f   t h e   f o l l o w i n g : 
+ / /           < i n p u t   t y p e = " t e x t "   c l a s s = " v D a t e F i e l d " > 
+ / /           < i n p u t   t y p e = " t e x t "   c l a s s = " v T i m e F i e l d " > 
+ ( f u n c t i o n ( )   { 
+         ' u s e   s t r i c t ' ; 
+         v a r   D a t e T i m e S h o r t c u t s   =   { 
+                 c a l e n d a r s :   [ ] , 
+                 c a l e n d a r I n p u t s :   [ ] , 
+                 c l o c k I n p u t s :   [ ] , 
+                 c l o c k H o u r s :   { 
+                         d e f a u l t _ :   [ 
+                                 [ g e t t e x t _ n o o p ( ' N o w ' ) ,   - 1 ] , 
+                                 [ g e t t e x t _ n o o p ( ' M i d n i g h t ' ) ,   0 ] , 
+                                 [ g e t t e x t _ n o o p ( ' 6   a . m . ' ) ,   6 ] , 
+                                 [ g e t t e x t _ n o o p ( ' N o o n ' ) ,   1 2 ] , 
+                                 [ g e t t e x t _ n o o p ( ' 6   p . m . ' ) ,   1 8 ] 
+                         ] 
+                 } , 
+                 d i s m i s s C l o c k F u n c :   [ ] , 
+                 d i s m i s s C a l e n d a r F u n c :   [ ] , 
+                 c a l e n d a r D i v N a m e 1 :   ' c a l e n d a r b o x ' ,   / /   n a m e   o f   c a l e n d a r   < d i v >   t h a t   g e t s   t o g g l e d 
+                 c a l e n d a r D i v N a m e 2 :   ' c a l e n d a r i n ' ,     / /   n a m e   o f   < d i v >   t h a t   c o n t a i n s   c a l e n d a r 
+                 c a l e n d a r L i n k N a m e :   ' c a l e n d a r l i n k ' , / /   n a m e   o f   t h e   l i n k   t h a t   i s   u s e d   t o   t o g g l e 
+                 c l o c k D i v N a m e :   ' c l o c k b o x ' ,                 / /   n a m e   o f   c l o c k   < d i v >   t h a t   g e t s   t o g g l e d 
+                 c l o c k L i n k N a m e :   ' c l o c k l i n k ' ,             / /   n a m e   o f   t h e   l i n k   t h a t   i s   u s e d   t o   t o g g l e 
+                 s h o r t C u t s C l a s s :   ' d a t e t i m e s h o r t c u t s ' ,   / /   c l a s s   o f   t h e   c l o c k   a n d   c a l   s h o r t c u t s 
+                 t i m e z o n e W a r n i n g C l a s s :   ' t i m e z o n e w a r n i n g ' ,   / /   c l a s s   o f   t h e   w a r n i n g   f o r   t i m e z o n e   m i s m a t c h 
+                 t i m e z o n e O f f s e t :   0 , 
+                 i n i t :   f u n c t i o n ( )   { 
+                         v a r   b o d y   =   d o c u m e n t . g e t E l e m e n t s B y T a g N a m e ( ' b o d y ' ) [ 0 ] ; 
+                         v a r   s e r v e r O f f s e t   =   b o d y . g e t A t t r i b u t e ( ' d a t a - a d m i n - u t c - o f f s e t ' ) ; 
+                         i f   ( s e r v e r O f f s e t )   { 
+                                 v a r   l o c a l O f f s e t   =   n e w   D a t e ( ) . g e t T i m e z o n e O f f s e t ( )   *   - 6 0 ; 
+                                 D a t e T i m e S h o r t c u t s . t i m e z o n e O f f s e t   =   l o c a l O f f s e t   -   s e r v e r O f f s e t ; 
+                         } 
+ 
+                         v a r   i n p u t s   =   d o c u m e n t . g e t E l e m e n t s B y T a g N a m e ( ' i n p u t ' ) ; 
+                         f o r   ( v a r   i   =   0 ;   i   <   i n p u t s . l e n g t h ;   i + + )   { 
+                                 v a r   i n p   =   i n p u t s [ i ] ; 
+                                 i f   ( i n p . g e t A t t r i b u t e ( ' t y p e ' )   = = =   ' t e x t '   & &   i n p . c l a s s N a m e . m a t c h ( / v T i m e F i e l d / ) )   { 
+                                         D a t e T i m e S h o r t c u t s . a d d C l o c k ( i n p ) ; 
+                                         D a t e T i m e S h o r t c u t s . a d d T i m e z o n e W a r n i n g ( i n p ) ; 
+                                 } 
+                                 e l s e   i f   ( i n p . g e t A t t r i b u t e ( ' t y p e ' )   = = =   ' t e x t '   & &   i n p . c l a s s N a m e . m a t c h ( / v D a t e F i e l d / ) )   { 
+                                         D a t e T i m e S h o r t c u t s . a d d C a l e n d a r ( i n p ) ; 
+                                         D a t e T i m e S h o r t c u t s . a d d T i m e z o n e W a r n i n g ( i n p ) ; 
+                                 } 
+                         } 
+                 } , 
+                 / /   R e t u r n   t h e   c u r r e n t   t i m e   w h i l e   a c c o u n t i n g   f o r   t h e   s e r v e r   t i m e z o n e . 
+                 n o w :   f u n c t i o n ( )   { 
+                         v a r   b o d y   =   d o c u m e n t . g e t E l e m e n t s B y T a g N a m e ( ' b o d y ' ) [ 0 ] ; 
+                         v a r   s e r v e r O f f s e t   =   b o d y . g e t A t t r i b u t e ( ' d a t a - a d m i n - u t c - o f f s e t ' ) ; 
+                         i f   ( s e r v e r O f f s e t )   { 
+                                 v a r   l o c a l N o w   =   n e w   D a t e ( ) ; 
+                                 v a r   l o c a l O f f s e t   =   l o c a l N o w . g e t T i m e z o n e O f f s e t ( )   *   - 6 0 ; 
+                                 l o c a l N o w . s e t T i m e ( l o c a l N o w . g e t T i m e ( )   +   1 0 0 0   *   ( s e r v e r O f f s e t   -   l o c a l O f f s e t ) ) ; 
+                                 r e t u r n   l o c a l N o w ; 
+                         }   e l s e   { 
+                                 r e t u r n   n e w   D a t e ( ) ; 
+                         } 
+                 } , 
+                 / /   A d d   a   w a r n i n g   w h e n   t h e   t i m e   z o n e   i n   t h e   b r o w s e r   a n d   b a c k e n d   d o   n o t   m a t c h . 
+                 a d d T i m e z o n e W a r n i n g :   f u n c t i o n ( i n p )   { 
+                         v a r   $   =   d j a n g o . j Q u e r y ; 
+                         v a r   w a r n i n g C l a s s   =   D a t e T i m e S h o r t c u t s . t i m e z o n e W a r n i n g C l a s s ; 
+                         v a r   t i m e z o n e O f f s e t   =   D a t e T i m e S h o r t c u t s . t i m e z o n e O f f s e t   /   3 6 0 0 ; 
+ 
+                         / /   O n l y   w a r n   i f   t h e r e   i s   a   t i m e   z o n e   m i s m a t c h . 
+                         i f   ( ! t i m e z o n e O f f s e t )   { 
+                                 r e t u r n ; 
+                         } 
+ 
+                         / /   C h e c k   i f   w a r n i n g   i s   a l r e a d y   t h e r e . 
+                         i f   ( $ ( i n p ) . s i b l i n g s ( ' . '   +   w a r n i n g C l a s s ) . l e n g t h )   { 
+                                 r e t u r n ; 
+                         } 
+ 
+                         v a r   m e s s a g e ; 
+                         i f   ( t i m e z o n e O f f s e t   >   0 )   { 
+                                 m e s s a g e   =   n g e t t e x t ( 
+                                         ' N o t e :   Y o u   a r e   % s   h o u r   a h e a d   o f   s e r v e r   t i m e . ' , 
+                                         ' N o t e :   Y o u   a r e   % s   h o u r s   a h e a d   o f   s e r v e r   t i m e . ' , 
+                                         t i m e z o n e O f f s e t 
+                                 ) ; 
+                         } 
+                         e l s e   { 
+                                 t i m e z o n e O f f s e t   * =   - 1 ; 
+                                 m e s s a g e   =   n g e t t e x t ( 
+                                         ' N o t e :   Y o u   a r e   % s   h o u r   b e h i n d   s e r v e r   t i m e . ' , 
+                                         ' N o t e :   Y o u   a r e   % s   h o u r s   b e h i n d   s e r v e r   t i m e . ' , 
+                                         t i m e z o n e O f f s e t 
+                                 ) ; 
+                         } 
+                         m e s s a g e   =   i n t e r p o l a t e ( m e s s a g e ,   [ t i m e z o n e O f f s e t ] ) ; 
+ 
+                         v a r   $ w a r n i n g   =   $ ( ' < s p a n > ' ) ; 
+                         $ w a r n i n g . a t t r ( ' c l a s s ' ,   w a r n i n g C l a s s ) ; 
+                         $ w a r n i n g . t e x t ( m e s s a g e ) ; 
+ 
+                         $ ( i n p ) . p a r e n t ( ) 
+                                 . a p p e n d ( $ ( ' < b r > ' ) ) 
+                                 . a p p e n d ( $ w a r n i n g ) ; 
+                 } , 
+                 / /   A d d   c l o c k   w i d g e t   t o   a   g i v e n   f i e l d 
+                 a d d C l o c k :   f u n c t i o n ( i n p )   { 
+                         v a r   n u m   =   D a t e T i m e S h o r t c u t s . c l o c k I n p u t s . l e n g t h ; 
+                         D a t e T i m e S h o r t c u t s . c l o c k I n p u t s [ n u m ]   =   i n p ; 
+                         D a t e T i m e S h o r t c u t s . d i s m i s s C l o c k F u n c [ n u m ]   =   f u n c t i o n ( )   {   D a t e T i m e S h o r t c u t s . d i s m i s s C l o c k ( n u m ) ;   r e t u r n   t r u e ;   } ; 
+ 
+                         / /   S h o r t c u t   l i n k s   ( c l o c k   i c o n   a n d   " N o w "   l i n k ) 
+                         v a r   s h o r t c u t s _ s p a n   =   d o c u m e n t . c r e a t e E l e m e n t ( ' s p a n ' ) ; 
+                         s h o r t c u t s _ s p a n . c l a s s N a m e   =   D a t e T i m e S h o r t c u t s . s h o r t C u t s C l a s s ; 
+                         i n p . p a r e n t N o d e . i n s e r t B e f o r e ( s h o r t c u t s _ s p a n ,   i n p . n e x t S i b l i n g ) ; 
+                         v a r   n o w _ l i n k   =   d o c u m e n t . c r e a t e E l e m e n t ( ' a ' ) ; 
+                         n o w _ l i n k . s e t A t t r i b u t e ( ' h r e f ' ,   " # " ) ; 
+                         n o w _ l i n k . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( g e t t e x t ( ' N o w ' ) ) ) ; 
+                         n o w _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . h a n d l e C l o c k Q u i c k l i n k ( n u m ,   - 1 ) ; 
+                         } ) ; 
+                         v a r   c l o c k _ l i n k   =   d o c u m e n t . c r e a t e E l e m e n t ( ' a ' ) ; 
+                         c l o c k _ l i n k . s e t A t t r i b u t e ( ' h r e f ' ,   ' # ' ) ; 
+                         c l o c k _ l i n k . i d   =   D a t e T i m e S h o r t c u t s . c l o c k L i n k N a m e   +   n u m ; 
+                         c l o c k _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 / /   a v o i d   t r i g g e r i n g   t h e   d o c u m e n t   c l i c k   h a n d l e r   t o   d i s m i s s   t h e   c l o c k 
+                                 e . s t o p P r o p a g a t i o n ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . o p e n C l o c k ( n u m ) ; 
+                         } ) ; 
+ 
+                         q u i c k E l e m e n t ( 
+                                 ' s p a n ' ,   c l o c k _ l i n k ,   ' ' , 
+                                 ' c l a s s ' ,   ' c l o c k - i c o n ' , 
+                                 ' t i t l e ' ,   g e t t e x t ( ' C h o o s e   a   T i m e ' ) 
+                         ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( ' \ u 0 0 A 0 ' ) ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( n o w _ l i n k ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( ' \ u 0 0 A 0 | \ u 0 0 A 0 ' ) ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( c l o c k _ l i n k ) ; 
+ 
+                         / /   C r e a t e   c l o c k   l i n k   d i v 
+                         / / 
+                         / /   M a r k u p   l o o k s   l i k e : 
+                         / /   < d i v   i d = " c l o c k b o x 1 "   c l a s s = " c l o c k b o x   m o d u l e " > 
+                         / /           < h 2 > C h o o s e   a   t i m e < / h 2 > 
+                         / /           < u l   c l a s s = " t i m e l i s t " > 
+                         / /                   < l i > < a   h r e f = " # " > N o w < / a > < / l i > 
+                         / /                   < l i > < a   h r e f = " # " > M i d n i g h t < / a > < / l i > 
+                         / /                   < l i > < a   h r e f = " # " > 6   a . m . < / a > < / l i > 
+                         / /                   < l i > < a   h r e f = " # " > N o o n < / a > < / l i > 
+                         / /                   < l i > < a   h r e f = " # " > 6   p . m . < / a > < / l i > 
+                         / /           < / u l > 
+                         / /           < p   c l a s s = " c a l e n d a r - c a n c e l " > < a   h r e f = " # " > C a n c e l < / a > < / p > 
+                         / /   < / d i v > 
+ 
+                         v a r   c l o c k _ b o x   =   d o c u m e n t . c r e a t e E l e m e n t ( ' d i v ' ) ; 
+                         c l o c k _ b o x . s t y l e . d i s p l a y   =   ' n o n e ' ; 
+                         c l o c k _ b o x . s t y l e . p o s i t i o n   =   ' a b s o l u t e ' ; 
+                         c l o c k _ b o x . c l a s s N a m e   =   ' c l o c k b o x   m o d u l e ' ; 
+                         c l o c k _ b o x . s e t A t t r i b u t e ( ' i d ' ,   D a t e T i m e S h o r t c u t s . c l o c k D i v N a m e   +   n u m ) ; 
+                         d o c u m e n t . b o d y . a p p e n d C h i l d ( c l o c k _ b o x ) ; 
+                         c l o c k _ b o x . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   {   e . s t o p P r o p a g a t i o n ( ) ;   } ) ; 
+ 
+                         q u i c k E l e m e n t ( ' h 2 ' ,   c l o c k _ b o x ,   g e t t e x t ( ' C h o o s e   a   t i m e ' ) ) ; 
+                         v a r   t i m e _ l i s t   =   q u i c k E l e m e n t ( ' u l ' ,   c l o c k _ b o x ) ; 
+                         t i m e _ l i s t . c l a s s N a m e   =   ' t i m e l i s t ' ; 
+                         / /   T h e   l i s t   o f   c h o i c e s   c a n   b e   o v e r r i d d e n   i n   J a v a S c r i p t   l i k e   t h i s : 
+                         / /   D a t e T i m e S h o r t c u t s . c l o c k H o u r s . n a m e   =   [ [ ' 3   a . m . ' ,   3 ] ] ; 
+                         / /   w h e r e   n a m e   i s   t h e   n a m e   a t t r i b u t e   o f   t h e   < i n p u t > . 
+                         v a r   n a m e   =   t y p e o f   D a t e T i m e S h o r t c u t s . c l o c k H o u r s [ i n p . n a m e ]   = = =   ' u n d e f i n e d '   ?   ' d e f a u l t _ '   :   i n p . n a m e ; 
+                         D a t e T i m e S h o r t c u t s . c l o c k H o u r s [ n a m e ] . f o r E a c h ( f u n c t i o n ( e l e m e n t )   { 
+                                 v a r   t i m e _ l i n k   =   q u i c k E l e m e n t ( ' a ' ,   q u i c k E l e m e n t ( ' l i ' ,   t i m e _ l i s t ) ,   g e t t e x t ( e l e m e n t [ 0 ] ) ,   ' h r e f ' ,   ' # ' ) ; 
+                                 t i m e _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                         e . p r e v e n t D e f a u l t ( ) ; 
+                                         D a t e T i m e S h o r t c u t s . h a n d l e C l o c k Q u i c k l i n k ( n u m ,   e l e m e n t [ 1 ] ) ; 
+                                 } ) ; 
+                         } ) ; 
+ 
+                         v a r   c a n c e l _ p   =   q u i c k E l e m e n t ( ' p ' ,   c l o c k _ b o x ) ; 
+                         c a n c e l _ p . c l a s s N a m e   =   ' c a l e n d a r - c a n c e l ' ; 
+                         v a r   c a n c e l _ l i n k   =   q u i c k E l e m e n t ( ' a ' ,   c a n c e l _ p ,   g e t t e x t ( ' C a n c e l ' ) ,   ' h r e f ' ,   ' # ' ) ; 
+                         c a n c e l _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . d i s m i s s C l o c k ( n u m ) ; 
+                         } ) ; 
+ 
+                         d o c u m e n t . a d d E v e n t L i s t e n e r ( ' k e y u p ' ,   f u n c t i o n ( e v e n t )   { 
+                                 i f   ( e v e n t . w h i c h   = = =   2 7 )   { 
+                                         / /   E S C   k e y   c l o s e s   p o p u p 
+                                         D a t e T i m e S h o r t c u t s . d i s m i s s C l o c k ( n u m ) ; 
+                                         e v e n t . p r e v e n t D e f a u l t ( ) ; 
+                                 } 
+                         } ) ; 
+                 } , 
+                 o p e n C l o c k :   f u n c t i o n ( n u m )   { 
+                         v a r   c l o c k _ b o x   =   d o c u m e n t . g e t E l e m e n t B y I d ( D a t e T i m e S h o r t c u t s . c l o c k D i v N a m e   +   n u m ) ; 
+                         v a r   c l o c k _ l i n k   =   d o c u m e n t . g e t E l e m e n t B y I d ( D a t e T i m e S h o r t c u t s . c l o c k L i n k N a m e   +   n u m ) ; 
+ 
+                         / /   R e c a l c u l a t e   t h e   c l o c k b o x   p o s i t i o n 
+                         / /   i s   i t   l e f t - t o - r i g h t   o r   r i g h t - t o - l e f t   l a y o u t   ? 
+                         i f   ( g e t S t y l e ( d o c u m e n t . b o d y ,   ' d i r e c t i o n ' )   ! = =   ' r t l ' )   { 
+                                 c l o c k _ b o x . s t y l e . l e f t   =   f i n d P o s X ( c l o c k _ l i n k )   +   1 7   +   ' p x ' ; 
+                         } 
+                         e l s e   { 
+                                 / /   s i n c e   s t y l e ' s   w i d t h   i s   i n   e m ,   i t ' d   b e   t o u g h   t o   c a l c u l a t e 
+                                 / /   p x   v a l u e   o f   i t .   l e t ' s   u s e   a n   e s t i m a t e d   p x   f o r   n o w 
+                                 / /   T O D O :   I E   r e t u r n s   w r o n g   v a l u e   f o r   f i n d P o s X   w h e n   i n   r t l   m o d e 
+                                 / /               ( i t   r e t u r n s   a s   i t   w a s   l e f t   a l i g n e d ) ,   n e e d s   t o   b e   f i x e d . 
+                                 c l o c k _ b o x . s t y l e . l e f t   =   f i n d P o s X ( c l o c k _ l i n k )   -   1 1 0   +   ' p x ' ; 
+                         } 
+                         c l o c k _ b o x . s t y l e . t o p   =   M a t h . m a x ( 0 ,   f i n d P o s Y ( c l o c k _ l i n k )   -   3 0 )   +   ' p x ' ; 
+ 
+                         / /   S h o w   t h e   c l o c k   b o x 
+                         c l o c k _ b o x . s t y l e . d i s p l a y   =   ' b l o c k ' ; 
+                         d o c u m e n t . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   D a t e T i m e S h o r t c u t s . d i s m i s s C l o c k F u n c [ n u m ] ) ; 
+                 } , 
+                 d i s m i s s C l o c k :   f u n c t i o n ( n u m )   { 
+                         d o c u m e n t . g e t E l e m e n t B y I d ( D a t e T i m e S h o r t c u t s . c l o c k D i v N a m e   +   n u m ) . s t y l e . d i s p l a y   =   ' n o n e ' ; 
+                         d o c u m e n t . r e m o v e E v e n t L i s t e n e r ( ' c l i c k ' ,   D a t e T i m e S h o r t c u t s . d i s m i s s C l o c k F u n c [ n u m ] ) ; 
+                 } , 
+                 h a n d l e C l o c k Q u i c k l i n k :   f u n c t i o n ( n u m ,   v a l )   { 
+                         v a r   d ; 
+                         i f   ( v a l   = = =   - 1 )   { 
+                                 d   =   D a t e T i m e S h o r t c u t s . n o w ( ) ; 
+                         } 
+                         e l s e   { 
+                                 d   =   n e w   D a t e ( 1 9 7 0 ,   1 ,   1 ,   v a l ,   0 ,   0 ,   0 ) ; 
+                         } 
+                         D a t e T i m e S h o r t c u t s . c l o c k I n p u t s [ n u m ] . v a l u e   =   d . s t r f t i m e ( g e t _ f o r m a t ( ' T I M E _ I N P U T _ F O R M A T S ' ) [ 0 ] ) ; 
+                         D a t e T i m e S h o r t c u t s . c l o c k I n p u t s [ n u m ] . f o c u s ( ) ; 
+                         D a t e T i m e S h o r t c u t s . d i s m i s s C l o c k ( n u m ) ; 
+                 } , 
+                 / /   A d d   c a l e n d a r   w i d g e t   t o   a   g i v e n   f i e l d . 
+                 a d d C a l e n d a r :   f u n c t i o n ( i n p )   { 
+                         v a r   n u m   =   D a t e T i m e S h o r t c u t s . c a l e n d a r s . l e n g t h ; 
+ 
+                         D a t e T i m e S h o r t c u t s . c a l e n d a r I n p u t s [ n u m ]   =   i n p ; 
+                         D a t e T i m e S h o r t c u t s . d i s m i s s C a l e n d a r F u n c [ n u m ]   =   f u n c t i o n ( )   {   D a t e T i m e S h o r t c u t s . d i s m i s s C a l e n d a r ( n u m ) ;   r e t u r n   t r u e ;   } ; 
+ 
+                         / /   S h o r t c u t   l i n k s   ( c a l e n d a r   i c o n   a n d   " T o d a y "   l i n k ) 
+                         v a r   s h o r t c u t s _ s p a n   =   d o c u m e n t . c r e a t e E l e m e n t ( ' s p a n ' ) ; 
+                         s h o r t c u t s _ s p a n . c l a s s N a m e   =   D a t e T i m e S h o r t c u t s . s h o r t C u t s C l a s s ; 
+                         i n p . p a r e n t N o d e . i n s e r t B e f o r e ( s h o r t c u t s _ s p a n ,   i n p . n e x t S i b l i n g ) ; 
+                         v a r   t o d a y _ l i n k   =   d o c u m e n t . c r e a t e E l e m e n t ( ' a ' ) ; 
+                         t o d a y _ l i n k . s e t A t t r i b u t e ( ' h r e f ' ,   ' # ' ) ; 
+                         t o d a y _ l i n k . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( g e t t e x t ( ' T o d a y ' ) ) ) ; 
+                         t o d a y _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . h a n d l e C a l e n d a r Q u i c k L i n k ( n u m ,   0 ) ; 
+                         } ) ; 
+                         v a r   c a l _ l i n k   =   d o c u m e n t . c r e a t e E l e m e n t ( ' a ' ) ; 
+                         c a l _ l i n k . s e t A t t r i b u t e ( ' h r e f ' ,   ' # ' ) ; 
+                         c a l _ l i n k . i d   =   D a t e T i m e S h o r t c u t s . c a l e n d a r L i n k N a m e   +   n u m ; 
+                         c a l _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 / /   a v o i d   t r i g g e r i n g   t h e   d o c u m e n t   c l i c k   h a n d l e r   t o   d i s m i s s   t h e   c a l e n d a r 
+                                 e . s t o p P r o p a g a t i o n ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . o p e n C a l e n d a r ( n u m ) ; 
+                         } ) ; 
+                         q u i c k E l e m e n t ( 
+                                 ' s p a n ' ,   c a l _ l i n k ,   ' ' , 
+                                 ' c l a s s ' ,   ' d a t e - i c o n ' , 
+                                 ' t i t l e ' ,   g e t t e x t ( ' C h o o s e   a   D a t e ' ) 
+                         ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( ' \ u 0 0 A 0 ' ) ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( t o d a y _ l i n k ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( ' \ u 0 0 A 0 | \ u 0 0 A 0 ' ) ) ; 
+                         s h o r t c u t s _ s p a n . a p p e n d C h i l d ( c a l _ l i n k ) ; 
+ 
+                         / /   C r e a t e   c a l e n d a r b o x   d i v . 
+                         / / 
+                         / /   M a r k u p   l o o k s   l i k e : 
+                         / / 
+                         / /   < d i v   i d = " c a l e n d a r b o x 3 "   c l a s s = " c a l e n d a r b o x   m o d u l e " > 
+                         / /           < h 2 > 
+                         / /                       < a   h r e f = " # "   c l a s s = " l i n k - p r e v i o u s " > & l s a q u o ; < / a > 
+                         / /                       < a   h r e f = " # "   c l a s s = " l i n k - n e x t " > & r s a q u o ; < / a >   F e b r u a r y   2 0 0 3 
+                         / /           < / h 2 > 
+                         / /           < d i v   c l a s s = " c a l e n d a r "   i d = " c a l e n d a r i n 3 " > 
+                         / /                   < ! - -   ( c a l )   - - > 
+                         / /           < / d i v > 
+                         / /           < d i v   c l a s s = " c a l e n d a r - s h o r t c u t s " > 
+                         / /                     < a   h r e f = " # " > Y e s t e r d a y < / a >   |   < a   h r e f = " # " > T o d a y < / a >   |   < a   h r e f = " # " > T o m o r r o w < / a > 
+                         / /           < / d i v > 
+                         / /           < p   c l a s s = " c a l e n d a r - c a n c e l " > < a   h r e f = " # " > C a n c e l < / a > < / p > 
+                         / /   < / d i v > 
+                         v a r   c a l _ b o x   =   d o c u m e n t . c r e a t e E l e m e n t ( ' d i v ' ) ; 
+                         c a l _ b o x . s t y l e . d i s p l a y   =   ' n o n e ' ; 
+                         c a l _ b o x . s t y l e . p o s i t i o n   =   ' a b s o l u t e ' ; 
+                         c a l _ b o x . c l a s s N a m e   =   ' c a l e n d a r b o x   m o d u l e ' ; 
+                         c a l _ b o x . s e t A t t r i b u t e ( ' i d ' ,   D a t e T i m e S h o r t c u t s . c a l e n d a r D i v N a m e 1   +   n u m ) ; 
+                         d o c u m e n t . b o d y . a p p e n d C h i l d ( c a l _ b o x ) ; 
+                         c a l _ b o x . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   {   e . s t o p P r o p a g a t i o n ( ) ;   } ) ; 
+ 
+                         / /   n e x t - p r e v   l i n k s 
+                         v a r   c a l _ n a v   =   q u i c k E l e m e n t ( ' d i v ' ,   c a l _ b o x ) ; 
+                         v a r   c a l _ n a v _ p r e v   =   q u i c k E l e m e n t ( ' a ' ,   c a l _ n a v ,   ' < ' ,   ' h r e f ' ,   ' # ' ) ; 
+                         c a l _ n a v _ p r e v . c l a s s N a m e   =   ' c a l e n d a r n a v - p r e v i o u s ' ; 
+                         c a l _ n a v _ p r e v . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . d r a w P r e v ( n u m ) ; 
+                         } ) ; 
+ 
+                         v a r   c a l _ n a v _ n e x t   =   q u i c k E l e m e n t ( ' a ' ,   c a l _ n a v ,   ' > ' ,   ' h r e f ' ,   ' # ' ) ; 
+                         c a l _ n a v _ n e x t . c l a s s N a m e   =   ' c a l e n d a r n a v - n e x t ' ; 
+                         c a l _ n a v _ n e x t . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . d r a w N e x t ( n u m ) ; 
+                         } ) ; 
+ 
+                         / /   m a i n   b o x 
+                         v a r   c a l _ m a i n   =   q u i c k E l e m e n t ( ' d i v ' ,   c a l _ b o x ,   ' ' ,   ' i d ' ,   D a t e T i m e S h o r t c u t s . c a l e n d a r D i v N a m e 2   +   n u m ) ; 
+                         c a l _ m a i n . c l a s s N a m e   =   ' c a l e n d a r ' ; 
+                         D a t e T i m e S h o r t c u t s . c a l e n d a r s [ n u m ]   =   n e w   C a l e n d a r ( D a t e T i m e S h o r t c u t s . c a l e n d a r D i v N a m e 2   +   n u m ,   D a t e T i m e S h o r t c u t s . h a n d l e C a l e n d a r C a l l b a c k ( n u m ) ) ; 
+                         D a t e T i m e S h o r t c u t s . c a l e n d a r s [ n u m ] . d r a w C u r r e n t ( ) ; 
+ 
+                         / /   c a l e n d a r   s h o r t c u t s 
+                         v a r   s h o r t c u t s   =   q u i c k E l e m e n t ( ' d i v ' ,   c a l _ b o x ) ; 
+                         s h o r t c u t s . c l a s s N a m e   =   ' c a l e n d a r - s h o r t c u t s ' ; 
+                         v a r   d a y _ l i n k   =   q u i c k E l e m e n t ( ' a ' ,   s h o r t c u t s ,   g e t t e x t ( ' Y e s t e r d a y ' ) ,   ' h r e f ' ,   ' # ' ) ; 
+                         d a y _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . h a n d l e C a l e n d a r Q u i c k L i n k ( n u m ,   - 1 ) ; 
+                         } ) ; 
+                         s h o r t c u t s . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( ' \ u 0 0 A 0 | \ u 0 0 A 0 ' ) ) ; 
+                         d a y _ l i n k   =   q u i c k E l e m e n t ( ' a ' ,   s h o r t c u t s ,   g e t t e x t ( ' T o d a y ' ) ,   ' h r e f ' ,   ' # ' ) ; 
+                         d a y _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . h a n d l e C a l e n d a r Q u i c k L i n k ( n u m ,   0 ) ; 
+                         } ) ; 
+                         s h o r t c u t s . a p p e n d C h i l d ( d o c u m e n t . c r e a t e T e x t N o d e ( ' \ u 0 0 A 0 | \ u 0 0 A 0 ' ) ) ; 
+                         d a y _ l i n k   =   q u i c k E l e m e n t ( ' a ' ,   s h o r t c u t s ,   g e t t e x t ( ' T o m o r r o w ' ) ,   ' h r e f ' ,   ' # ' ) ; 
+                         d a y _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . h a n d l e C a l e n d a r Q u i c k L i n k ( n u m ,   + 1 ) ; 
+                         } ) ; 
+ 
+                         / /   c a n c e l   b a r 
+                         v a r   c a n c e l _ p   =   q u i c k E l e m e n t ( ' p ' ,   c a l _ b o x ) ; 
+                         c a n c e l _ p . c l a s s N a m e   =   ' c a l e n d a r - c a n c e l ' ; 
+                         v a r   c a n c e l _ l i n k   =   q u i c k E l e m e n t ( ' a ' ,   c a n c e l _ p ,   g e t t e x t ( ' C a n c e l ' ) ,   ' h r e f ' ,   ' # ' ) ; 
+                         c a n c e l _ l i n k . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   f u n c t i o n ( e )   { 
+                                 e . p r e v e n t D e f a u l t ( ) ; 
+                                 D a t e T i m e S h o r t c u t s . d i s m i s s C a l e n d a r ( n u m ) ; 
+                         } ) ; 
+                         d j a n g o . j Q u e r y ( d o c u m e n t ) . b i n d ( ' k e y u p ' ,   f u n c t i o n ( e v e n t )   { 
+                                 i f   ( e v e n t . w h i c h   = = =   2 7 )   { 
+                                         / /   E S C   k e y   c l o s e s   p o p u p 
+                                         D a t e T i m e S h o r t c u t s . d i s m i s s C a l e n d a r ( n u m ) ; 
+                                         e v e n t . p r e v e n t D e f a u l t ( ) ; 
+                                 } 
+                         } ) ; 
+                 } , 
+                 o p e n C a l e n d a r :   f u n c t i o n ( n u m )   { 
+                         v a r   c a l _ b o x   =   d o c u m e n t . g e t E l e m e n t B y I d ( D a t e T i m e S h o r t c u t s . c a l e n d a r D i v N a m e 1   +   n u m ) ; 
+                         v a r   c a l _ l i n k   =   d o c u m e n t . g e t E l e m e n t B y I d ( D a t e T i m e S h o r t c u t s . c a l e n d a r L i n k N a m e   +   n u m ) ; 
+                         v a r   i n p   =   D a t e T i m e S h o r t c u t s . c a l e n d a r I n p u t s [ n u m ] ; 
+ 
+                         / /   D e t e r m i n e   i f   t h e   c u r r e n t   v a l u e   i n   t h e   i n p u t   h a s   a   v a l i d   d a t e . 
+                         / /   I f   s o ,   d r a w   t h e   c a l e n d a r   w i t h   t h a t   d a t e ' s   y e a r   a n d   m o n t h . 
+                         i f   ( i n p . v a l u e )   { 
+                                 v a r   f o r m a t   =   g e t _ f o r m a t ( ' D A T E _ I N P U T _ F O R M A T S ' ) [ 0 ] ; 
+                                 v a r   s e l e c t e d   =   i n p . v a l u e . s t r p t i m e ( f o r m a t ) ; 
+                                 v a r   y e a r   =   s e l e c t e d . g e t U T C F u l l Y e a r ( ) ; 
+                                 v a r   m o n t h   =   s e l e c t e d . g e t U T C M o n t h ( )   +   1 ; 
+                                 v a r   r e   =   / \ d { 4 } / ; 
+                                 i f   ( r e . t e s t ( y e a r . t o S t r i n g ( ) )   & &   m o n t h   > =   1   & &   m o n t h   < =   1 2 )   { 
+                                         D a t e T i m e S h o r t c u t s . c a l e n d a r s [ n u m ] . d r a w D a t e ( m o n t h ,   y e a r ,   s e l e c t e d ) ; 
+                                 } 
+                         } 
+ 
+                         / /   R e c a l c u l a t e   t h e   c l o c k b o x   p o s i t i o n 
+                         / /   i s   i t   l e f t - t o - r i g h t   o r   r i g h t - t o - l e f t   l a y o u t   ? 
+                         i f   ( g e t S t y l e ( d o c u m e n t . b o d y ,   ' d i r e c t i o n ' )   ! = =   ' r t l ' )   { 
+                                 c a l _ b o x . s t y l e . l e f t   =   f i n d P o s X ( c a l _ l i n k )   +   1 7   +   ' p x ' ; 
+                         } 
+                         e l s e   { 
+                                 / /   s i n c e   s t y l e ' s   w i d t h   i s   i n   e m ,   i t ' d   b e   t o u g h   t o   c a l c u l a t e 
+                                 / /   p x   v a l u e   o f   i t .   l e t ' s   u s e   a n   e s t i m a t e d   p x   f o r   n o w 
+                                 / /   T O D O :   I E   r e t u r n s   w r o n g   v a l u e   f o r   f i n d P o s X   w h e n   i n   r t l   m o d e 
+                                 / /               ( i t   r e t u r n s   a s   i t   w a s   l e f t   a l i g n e d ) ,   n e e d s   t o   b e   f i x e d . 
+                                 c a l _ b o x . s t y l e . l e f t   =   f i n d P o s X ( c a l _ l i n k )   -   1 8 0   +   ' p x ' ; 
+                         } 
+                         c a l _ b o x . s t y l e . t o p   =   M a t h . m a x ( 0 ,   f i n d P o s Y ( c a l _ l i n k )   -   7 5 )   +   ' p x ' ; 
+ 
+                         c a l _ b o x . s t y l e . d i s p l a y   =   ' b l o c k ' ; 
+                         d o c u m e n t . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   D a t e T i m e S h o r t c u t s . d i s m i s s C a l e n d a r F u n c [ n u m ] ) ; 
+                 } , 
+                 d i s m i s s C a l e n d a r :   f u n c t i o n ( n u m )   { 
+                         d o c u m e n t . g e t E l e m e n t B y I d ( D a t e T i m e S h o r t c u t s . c a l e n d a r D i v N a m e 1   +   n u m ) . s t y l e . d i s p l a y   =   ' n o n e ' ; 
+                         d o c u m e n t . r e m o v e E v e n t L i s t e n e r ( ' c l i c k ' ,   D a t e T i m e S h o r t c u t s . d i s m i s s C a l e n d a r F u n c [ n u m ] ) ; 
+                 } , 
+                 d r a w P r e v :   f u n c t i o n ( n u m )   { 
+                         D a t e T i m e S h o r t c u t s . c a l e n d a r s [ n u m ] . d r a w P r e v i o u s M o n t h ( ) ; 
+                 } , 
+                 d r a w N e x t :   f u n c t i o n ( n u m )   { 
+                         D a t e T i m e S h o r t c u t s . c a l e n d a r s [ n u m ] . d r a w N e x t M o n t h ( ) ; 
+                 } , 
+                 h a n d l e C a l e n d a r C a l l b a c k :   f u n c t i o n ( n u m )   { 
+                         v a r   f o r m a t   =   g e t _ f o r m a t ( ' D A T E _ I N P U T _ F O R M A T S ' ) [ 0 ] ; 
+                         / /   t h e   f o r m a t   n e e d s   t o   b e   e s c a p e d   a   l i t t l e 
+                         f o r m a t   =   f o r m a t . r e p l a c e ( ' \ \ ' ,   ' \ \ \ \ ' ) ; 
+                         f o r m a t   =   f o r m a t . r e p l a c e ( ' \ r ' ,   ' \ \ r ' ) ; 
+                         f o r m a t   =   f o r m a t . r e p l a c e ( ' \ n ' ,   ' \ \ n ' ) ; 
+                         f o r m a t   =   f o r m a t . r e p l a c e ( ' \ t ' ,   ' \ \ t ' ) ; 
+                         f o r m a t   =   f o r m a t . r e p l a c e ( " ' " ,   " \ \ ' " ) ; 
+                         r e t u r n   f u n c t i o n ( y ,   m ,   d )   { 
+                                 D a t e T i m e S h o r t c u t s . c a l e n d a r I n p u t s [ n u m ] . v a l u e   =   n e w   D a t e ( y ,   m   -   1 ,   d ) . s t r f t i m e ( f o r m a t ) ; 
+                                 D a t e T i m e S h o r t c u t s . c a l e n d a r I n p u t s [ n u m ] . f o c u s ( ) ; 
+                                 d o c u m e n t . g e t E l e m e n t B y I d ( D a t e T i m e S h o r t c u t s . c a l e n d a r D i v N a m e 1   +   n u m ) . s t y l e . d i s p l a y   =   ' n o n e ' ; 
+                         } ; 
+                 } , 
+                 h a n d l e C a l e n d a r Q u i c k L i n k :   f u n c t i o n ( n u m ,   o f f s e t )   { 
+                         v a r   d   =   D a t e T i m e S h o r t c u t s . n o w ( ) ; 
+                         d . s e t D a t e ( d . g e t D a t e ( )   +   o f f s e t ) ; 
+                         D a t e T i m e S h o r t c u t s . c a l e n d a r I n p u t s [ n u m ] . v a l u e   =   d . s t r f t i m e ( g e t _ f o r m a t ( ' D A T E _ I N P U T _ F O R M A T S ' ) [ 0 ] ) ; 
+                         D a t e T i m e S h o r t c u t s . c a l e n d a r I n p u t s [ n u m ] . f o c u s ( ) ; 
+                         D a t e T i m e S h o r t c u t s . d i s m i s s C a l e n d a r ( n u m ) ; 
+                 } 
+         } ; 
+ 
+         w i n d o w . a d d E v e n t L i s t e n e r ( ' l o a d ' ,   D a t e T i m e S h o r t c u t s . i n i t ) ; 
+         w i n d o w . D a t e T i m e S h o r t c u t s   =   D a t e T i m e S h o r t c u t s ; 
+ } ) ( ) ; 
+   A       http://127.0.0.1:8000/static/admin/js/admin/DateTimeShortcuts.js    ç!´!á!´!ˇˇˇˇ            å!´!ç!´!       C                            6O    6O     ç!´!å!´!ˇˇˇˇ   #   DateTimeShortcuts          å!´!é!´!       é!´!   default_ã!´!    å!´!ç!´!       	   initC               	       É  a	  {  a	        ç!´!å!´!ˇˇˇˇ   	   body   serverOffset   localOffset   inputs   i   inp          å!´!å!´!   vTimeField å!´!å!´!   vDateField öò;¯   “  µ                     	       5     & ö    ∏   
+=   : >7W   QV   ∏   
+=   : W  QV  =   Ê   ö   A,  R  ∏   
+:  ◊ƒW  Qà   V  V  0   QÊ   ö    ∏   
+=   : W  Q>W  Q   m   V  V  7W  QV  ∏   
+=	   : =
+   HE#   Ê   QV  5   ∏   
+†   : Ê   7   Ê   à   ∏   
+V  Á Qà   ∏   
+V  Á Q}   Ê"   V  ∏   
+=	   : =
+   HE#   Ê&   QV  5   ∏   
+†   : Ê)   2   Ê*   à   ∏   
+V  Á Qà   ∏   
+V  Á QÊ0   V  ÏÍW  QQ„1   ÅV  V  Ÿ   ◊˛ˇˇÊ5   ô†ò∏∞—ò	∞ †ò∏∞–ò∞»†ò∏∞ †ò"∏∞‘ò∞À†ò∏∞Ÿ®&ò∏∞—ò	∞»†òò∏∞&Ä Ä Ä .¶ò≠'†ò∏∞Œ†ò∏∞–ò∞Èò1∞» †ò∏∞–ò∞§ò∏∞–ò∞Œ®-ò∏∞–ò∞Èò1∞» †ò∏∞–ò∞§ò∏∞–ò∞…®'ò/∏∞Õ®1®'òæ∞ÿ®2ò∞       document)   getElementsByTagName	   body   getAttribute+   data-admin-utc-offset	   Date#   getTimezoneOffset   timezoneOffset   input	   type	   text   className   match   addClock%   addTimezoneWarning   addCalendar   length       û   .     ˇˇˇˇ    5ûå!´!ç!´!          nowB  ≈	  ≥  Ω	  ≥  4         ˇˇˇˇ        5ûå!´!ç!´!       %   addTimezoneWarningC A   $          
+       .  Ç  &  Ç        ç!´!å!´!ˇˇˇˇ      inp   $   warningClass   timezoneOffset   message   $warning        öò;¯   Ñ  ≥                      
+       )     ö    5   W   Qà   5   W  Qà   5   XW  QV      Ê   Ê   V   T  : ∏   
+=   V  : Ÿ      Ê   Ê   V  >/   Ê   ö   ù   =   =	   V  : W  Q6   Ê   V  ◊ˇW  Qö   ù   =
+   =   V  : W  QÊ   ö   ù   V  Z   V  `    : W  QV   =   : W  QV  ∏   
+=   V  Á QV  ∏   
+V  Á QV   T  : ∏   
+:  ∏   
+V   =   : : ∏   
+V  Á Qô†ò∏∞œ†ò∏∞œ†ò!∏∞”®Gò∏∞ †ò∏∞©iòÆLò∏∞‹ò∞» †ò∏∞©iòÆP†ò∏∞ †ò∏∞ †••¨Rò∞“®X†ò∏∞Ã†ò∏∞ †••¨Zò∞Õ®`ò∏∞”ò …òˇˇˇÍ∞»®bò∏∞“†ò∏∞‘ò	∞§ò∏∞œò	∞¨fò∏∞“ò∞ † ò∞õˇˇˇ˘∞ †ú∞§ò∞     django   jQuery)   timezoneWarningClass   timezoneOffset   siblings   .   length   ngettextW   Note: You are %s hour ahead of server time.Y   Note: You are %s hours ahead of server time.S   Note: You are %s hour behind server time.U   Note: You are %s hours behind server time.   interpolate   <span>	   attr   class	   text   parent   append	   <br>   ˇˇˇˇ    5ûå!´!ç!´!          addClockC  k                     À  Ë"  √  Ë"      ç!´!å!´!ˇˇˇˇ
+      inp   num   shortcuts_span   now_link   clock_link   clock_box   time_list	   name   cancel_p   cancel_link       å!´!ç!´!    	   a   addClock/DateTimeShortcuts.dismissClockFunc[num]b  É  ª  {  ª  n   >      ˇˇˇˇ        5ûå!´!ç!´!    	      addClock/<b ∂  .  Æ  .  w   7      ˇˇˇˇ        5ûå!´!ç!´!    	      addClock/<b   ˚    ˚  ~   9      ˇˇˇˇ        5ûå!´!ç!´!    	      addClock/<b ¶  ¬  û  ¬  §   8      ˇˇˇˇ        5ûå!´!ç!´!          addClock/<c   ≠              	       Û  K   Î  K       ç!´!å!´!ˇˇˇˇ      element   time_link       å!´!ç!´!    	      addClock/</<b Ø  ;   ß  ;   Ø   <      ˇˇˇˇ        5ûöò;¯   f   %                      	            ö    ù    =   ö    ù    =   à  : ö   ù   à   >7: =   =   : W   QV   ∏   
+=   Ç   Á Qô†ò ∏∞„ò∞‘ò∞Õòˇˇˇœ»†ò∏∞’ò
+∞§†††ò∞    quickElement   a   li   gettext	   href   #!   addEventListener   click 5ûå!´!ç!´!    	      addClock/<b Q!  Ω!  I!  Ω!  ∏   :      ˇˇˇˇ        5ûå!´!ç!´!    	      addClock/<b ¯!  ‹"  !  ‹"  Ω   7      ˇˇˇˇ        5ûöò;¯5     w                            x    h à  5    Ÿ   â   Qà  5    à   T  9Qà  5   à   Ç   9Qö   ∏   
+=   : W   QV   à  5   0   QT  5   ∏	   
+V   T  5
+   Á Qö   ∏   
+=   : W  QV  ∏   
+=   =   Á QV  ∏   
+ö   ∏   
+ö   ù   =   : : Á QV  ∏   
+=   Ç   Á Qö   ∏   
+=   : W  QV  ∏   
+=   =   Á QV  à  5   à   0   QV  ∏   
+=   Ç   Á Qö   ù   =   V  =   =   =   =   ö   ù   =   : Á QV   ∏   
+ö   ∏   
+=   : Á QV   ∏   
+V  Á QV   ∏   
+ö   ∏   
+=   : Á QV   ∏   
+V  Á Qö   ∏   
+=   : W  QV  5    =!   0"   QV  5    =#   0$   QV  =%   0   QV  ∏   
+=   à  5&   à   Á Qö   5'   ∏   
+V  Á QV  ∏   
+=   Ç   Á Qö   ù   =(   V  ö   ù   =)   : Á Qö   ù   =*   V  : â   Qà   =+   0   Qà  5,   T  5-   7ƒ=.   H   Êf   =/      Êf   T  5-   Êg   W  Qà  5,   V  7∏0   
+Ç   Á Qö   ù   =1   V  : W  QV  =2   0   Qö   ù   =   V  ö   ù   =3   : =   =   : W  QV  ∏   
+=   Ç   Á Qö   ∏   
+=4   Ç   Á Qô†ò∏∞’†ò∏∞‘†ò∏∞÷®qò!∏∞—ò	∞»†ò∏∞‘†ò∏∞€ò∞§ò∏∞—ò	∞»†ò∏∞’ò	∞§ò∏∞Êò-∞õˇˇˇÒ∞õˇˇˇÎ∞§ò∏∞’ò	∞¨{ò∏∞—ò	∞»†ò∏∞’ò∞§ò∏∞⁄†ò∏∞’ò∞¨Ä  Öò∏∞ †Œ† †‘ò∞´Ä  Öò¨Ä  äò∏∞‹ò$∞õˇˇˇÎ∞§ò∏∞œò∞§ò∏∞‹ò$∞õˇˇˇÎ∞§ò∏∞œò∞¨Ä  ûò∏∞—ò	∞»†ò∏∞‘†ò∏∞‘†ò∏∞œ†ò∏∞‡ò
+∞§ò∏∞’ò∞§ò∏∞’ò
+∞§†ò∏∞‚ò∞õˇˇˇ‚§ò∏∞‹†ò∏∞–††††ò∏∞⁄Î†ò∏∞€ò#∞¨Ä  µò∏∞€†ò∏∞œ†ò∏∞‚ò∞Õòˇˇˇ‰»†ò∏∞’ò∞¨Ä  Ωò∏∞÷ò	∞¨Ä  ƒò∞    clockInputs   length!   dismissClockFunc   document   createElement	   span   shortCutsClass   className   parentNode   insertBefore   nextSibling   a   setAttribute	   href   #   appendChild   createTextNode   gettext   Now!   addEventListener   click   clockLinkName   id   quickElement      class   clock-icon   title   Choose a Time   †   †|†   div   style	   none   display   absolute   position   clockbox module   clockDivName	   body   h2   Choose a time   ul   timelist   clockHours	   name   undefined   default_   forEach   p   calendar-cancel   Cancel   keyup 5ûå!´!ç!´!          openClockB #  m'  ˝"  m'  ≈         ˇˇˇˇ        5ûå!´!ç!´!          dismissClockB ç'  \(  Ö'  \(  €         ˇˇˇˇ        5ûå!´!ç!´!       )   handleClockQuicklinkB Ñ(  0*  |(  0*  ﬂ   &      ˇˇˇˇ        5ûå!´!ç!´!          addCalendarC  Ï                     Ä*  dA  x*  dA      ç!´!å!´!ˇˇˇˇ      inp   num   shortcuts_span   today_link   cal_link   cal_box   cal_nav   cal_nav_prev   cal_nav_next   cal_main   shortcuts   day_link   cancel_p   cancel_link       å!´!ç!´!    	   m   addCalendar/DateTimeShortcuts.dismissCalendarFunc[num]b  =+  x+  5+  x+     A      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b Ç-  ¸-  z-  ¸-  ˘   9      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b ‚.   /  ⁄.   /     7      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b ˝5  6  ı5  6  '  6      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b 97  °7  17  °7  -  ;      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b f8  Œ8  ^8  Œ8  4  ;      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b ~;  ˘;  v;  ˘;  C  7      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b ‘<  N=  Ã<  N=  I  7      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b ,>  ß>  $>  ß>  O  7      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b ≈?  4@  Ω?  4@  X  :      ˇˇˇˇ        5ûå!´!ç!´!    	      addCalendar/<b q@  XA  i@  XA  \  :      ˇˇˇˇ        5ûöò;¯<     -                            ¨    ô à  5    Ÿ   â   Qà  5   à   T  9Qà  5   à   Ç   9Qö   ∏   
+=   : W   QV   à  5   0   QT  5	   ∏
+   
+V   T  5   Á Qö   ∏   
+=   : W  QV  ∏   
+=   =   Á QV  ∏   
+ö   ∏   
+ö   ù   =   : : Á QV  ∏   
+=   Ç   Á Qö   ∏   
+=   : W  QV  ∏   
+=   =   Á QV  à  5   à   0   QV  ∏   
+=   Ç   Á Qö   ù   =   V  =   =   =   =   ö   ù   =   : Á QV   ∏   
+ö   ∏   
+=   : Á QV   ∏   
+V  Á QV   ∏   
+ö   ∏   
+=   : Á QV   ∏   
+V  Á Qö   ∏   
+=    : W  QV  5!   ="   0#   QV  5!   =$   0%   QV  =&   0   QV  ∏   
+=   à  5'   à   Á Qö   5(   ∏   
+V  Á QV  ∏   
+=   Ç   Á Qö   ù   =    V  : W  Qö   ù   =   V  =)   =   =   : W  QV  =*   0   QV  ∏   
+=   Ç   Á Qö   ù   =   V  =+   =   =   : W  QV  =,   0   QV  ∏   
+=   Ç   Á Qö   ù   =    V  =   =   à  5-   à   : W  QV  =.   0   Qà  5    à   ö/   Aà  5-   à   à  ∏0   
+à   : ,  R 9Qà  5    à   7∏1   
+Á  Qö   ù   =    V  : W  QV  =2   0   Qö   ù   =   V  ö   ù   =3   : =   =   : W	  QV	  ∏   
+=   Ç   Á QV  ∏   
+ö   ∏   
+=   : Á Qö   ù   =   V  ö   ù   =   : =   =   : W	  QV	  ∏   
+=   Ç   Á QV  ∏   
+ö   ∏   
+=   : Á Qö   ù   =   V  ö   ù   =4   : =   =   : W	  QV	  ∏   
+=   Ç	   Á Qö   ù   =5   V  : W
+  QV
+  =6   0   Qö   ù   =   V
+  ö   ù   =7   : =   =   : W  QV  ∏   
+=   Ç
+   Á Qö8   ∏9   
+ö   : ∏:   
+=;   Ç   Á Qô†ò∏∞’††ò∏∞‘†ò∏∞÷†††ò!∏∞—ò	∞»†ò∏∞‘†ò∏∞€ò∞§ò∏∞—ò	∞»†ò∏∞’ò∞§ò∏∞Êò/∞õˇˇˇÒ∞õˇˇˇÎ∞§ò∏∞’ò∞§†††ò∏∞—ò	∞»†ò∏∞’ò	∞§ò∏∞⁄†ò∏∞’ò	∞¨Ä ò∏∞ †Œ† †‘ò∞´Ä ò¨Ä ò∏∞‹ò$∞õˇˇˇÎ∞§ò∏∞œò∞§ò∏∞‹ò$∞õˇˇˇÎ∞§ò∏∞œò∞¨Ä !ò∏∞—ò	∞»†ò∏∞‘†ò∏∞‘†ò∏∞œ†ò∏∞‡ò∞§ò∏∞’ò∞§ò∏∞’ò∞§††ò∏∞€†ò∏∞Í†ò∏∞œ†ò∏∞’ò∞¨Ä 2ò∏∞Í†ò∏∞œ†ò∏∞’ò∞¨Ä :ò∏∞ı†ò∏∞œ†ò∏∞ˆòl∞üˇˇˇ∑∞•ò∏∞◊ò!∞§††ò∏∞€†ò∏∞œ†ò∏∞‚ò∞Õòˇˇˇ„»†ò∏∞’ò	∞§†††ò∏∞‹ò∞õˇˇˇÎ∞§ò∏∞‚ò(∞Õòˇˇˇ„∞»†ò∏∞’ò	∞§†††ò∏∞‹ò∞õˇˇˇÎ∞§ò∏∞‚ò(∞Õòˇˇˇ„∞»†ò∏∞’ò	∞¨Ä Uò∏∞€†ò∏∞œ†ò∏∞‚ò∞Õòˇˇˇ‰»†ò∏∞’ò∞§†††ò∏∞—ò∞‘ò∞¨Ä cò∞     calendars   length   calendarInputs'   dismissCalendarFunc   document   createElement	   span   shortCutsClass   className   parentNode   insertBefore   nextSibling   a   setAttribute	   href   #   appendChild   createTextNode   gettext   Today!   addEventListener   click!   calendarLinkName   id   quickElement      class   date-icon   title   Choose a Date   †   †|†   div   style	   none   display   absolute   position%   calendarbox module!   calendarDivName1	   body   <)   calendarnav-previous   >!   calendarnav-next!   calendarDivName2   calendar   Calendar-   handleCalendarCallback   drawCurrent%   calendar-shortcuts   Yesterday   Tomorrow   p   calendar-cancel   Cancel   django   jQuery	   bind   keyup 5ûå!´!ç!´!          openCalendarB ÑA  ÉH  |A  ÉH  d        ˇˇˇˇ        5ûå!´!ç!´!          dismissCalendarB ¶H  |I  ûH  |I  á  !      ˇˇˇˇ        5ûå!´!ç!´!          drawPrevB òI  ÎI  êI  ÎI  ã        ˇˇˇˇ        5ûå!´!ç!´!          drawNextB J  VJ  ˇI  VJ  é        ˇˇˇˇ        5ûå!´!ç!´!       -   handleCalendarCallbackC  ë                     ÄJ  EM  xJ  EM      ç!´!å!´!ˇˇˇˇ      num   format        å!´!ç!´!    	   1   handleCalendarCallback/<b L  :M  
+L  :M  ô        ˇˇˇˇ        5ûöò;¯   º   G                                   ö    ù    =   : >7â   Qà   ∏   
+=   =   : â   Qà   ∏   
+=   =   : â   Qà   ∏   
+=   =   : â   Qà   ∏   
+=	   =
+   : â   Qà   ∏   
+=   =   : â   QÇ   ô†ò∏∞⁄††ò∏∞÷ò∞…†ò∏∞÷ò∞…†ò∏∞÷ò∞…†ò∏∞÷ò∞…†ò∏∞÷ò∞…†ò∏∞≠Ä ûò±    get_format%   DATE_INPUT_FORMATS   replace   \   \\      \r   
+   \n   	   \t   '   \' 5ûå!´!ç!´!       /   handleCalendarQuickLinkB pM  ΩN  hM  ΩN  ü  )      ˇˇˇˇ        5ûå!´!é!´!       é!´!   calendarsã!´!é!´!   calendarInputsã!´!é!´!   clockInputsã!´!é!´!   clockHoursã!´!é!´!!   dismissClockFuncã!´!é!´!'   dismissCalendarFuncã!´!é!´!!   calendarDivName1ã!´!é!´!!   calendarDivName2ã!´!é!´!!   calendarLinkNameã!´!é!´!   clockDivNameã!´!é!´!   clockLinkNameã!´!é!´!   shortCutsClassã!´!é!´!)   timezoneWarningClassã!´!é!´!   timezoneOffsetã!´!é!´!	   initã!´!é!´!   nowã!´!é!´!%   addTimezoneWarningã!´!é!´!   addClockã!´!é!´!   openClockã!´!é!´!   dismissClockã!´!é!´!)   handleClockQuicklinkã!´!é!´!   addCalendarã!´!é!´!   openCalendarã!´!é!´!   dismissCalendarã!´!é!´!   drawPrevã!´!é!´!   drawNextã!´!é!´!-   handleCalendarCallbackã!´!é!´!/   handleCalendarQuickLinkã!´!    öò;¯.      Î                              L      [   Z    ]    Z    ]   Z    ]   [   Z   Z   ö   ù   =   : `    ◊ˇ`   `    Z   ö   ù   =   : `    >`   `   Z   ö   ù   =   : `    ◊`   `   Z   ö   ù   =   : `    ◊`   `   Z   ö   ù   =   : `    ◊`   `   ]	   ]
+   Z    ]   Z    ]   =   ]   =   ]   =   ]   =   ]   =   ]   =   ]   =   ]   >]   Ç   ]   Ç   ]   Ç   ]   Ç   ]   Ç   ]    Ç   ]!   Ç   ]"   Ç	   ]#   Ç
+   ]$   Ç   ]%   Ç   ]&   Ç   ]'   Ç   ](   Ç   ])   â   Qö*   ∏+   
+=,   à   5   Á Qö*   à   0-   Qô††ò∏∞•ò †ò †ò †ò•ò•òùœ∞»òÃ†òùœ∞»òÀ†òùœ∞»òÃ†òùœ∞»òÃ†òùœ∞»ò÷®ò †ò †ò †ò †ò †ò †ò †ò †ò †ò¶ò ®4ò ®Aò ®kò ®Ä  ≈ò ®Ä  €ò ††††ò ®Ä  Ïò ®Ä dò ®Ä áò ††††ò †††ò †††ò ®Ä üò–®Ä ®ò∏∞€ò∞§ò∏∞–†∞     calendars   calendarInputs   clockInputs   gettext_noop   Now   Midnight   6 a.m.	   Noon   6 p.m.   default_   clockHours!   dismissClockFunc'   dismissCalendarFunc   calendarbox!   calendarDivName1   calendarin!   calendarDivName2   calendarlink!   calendarLinkName   clockbox   clockDivName   clocklink   clockLinkName#   datetimeshortcuts   shortCutsClass   timezonewarning)   timezoneWarningClass   timezoneOffset	   init   now%   addTimezoneWarning   addClock   openClock   dismissClock)   handleClockQuicklink   addCalendar   openCalendar   dismissCalendar   drawPrev   drawNext-   handleCalendarCallback/   handleCalendarQuickLink   window!   addEventListener	   load#   DateTimeShortcuts 5ûöò;¯                                           Ç   Á  Qô®ò∏∞ÆÄ ™ò∞§∞    M‰ö–      ]ø9Ò]ø9Á@˝]ø¢•   A    :http://127.0.0.1:8000/static/admin/js/admin/DateTimeShortcuts.js necko:classified 1 strongly-framed 1 request-method GET response-head HTTP/1.1 200 OK
+Date: Sun, 03 Nov 2019 20:32:15 GMT
+Server: WSGIServer/0.2 CPython/3.6.8
+Content-Type: application/javascript
+Last-Modified: Thu, 31 Oct 2019 17:37:53 GMT
+Content-Length: 20283
+ original-response-headers Date: Sun, 03 Nov 2019 20:32:15 GMT
+Server: WSGIServer/0.2 CPython/3.6.8
+Content-Type: application/javascript
+Last-Modified: Thu, 31 Oct 2019 17:37:53 GMT
+Content-Length: 20283
+ ctid 2 uncompressed-len 0 net-response-time-onstart 24 net-response-time-onstop 24 alt-data 1;20283,javascript/moz-bytecode-20190917224635 alt-data-from-child 1  $g
